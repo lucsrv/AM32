@@ -707,6 +707,89 @@ void MX_TIM6_Init(void)
     LL_TIM_SetTriggerOutput(TIM6, LL_TIM_TRGO_RESET);
     LL_TIM_DisableMasterSlaveMode(TIM6);
 }
+#ifdef USE_PULSE_OUT_TIMER
+/*
+ * Sortie RPM lissee par TIM7.
+ * Meme signal que USE_PULSE_OUT (1 cycle complet = 1 tour electrique, rapport
+ * cyclique 50 %), mais genere par un timer a partir de e_com_time (moyenne des
+ * 6 derniers intervalles de commutation, en us) filtree, et non plus a chaque
+ * commutation : la gigue de detection des passages a zero n'apparait plus.
+ */
+#ifndef RPM_PULSE_FILTER_SHIFT
+#define RPM_PULSE_FILTER_SHIFT 2 /* filtre 1/4 par demi-periode ; 1 = plus rapide, 3 = plus lisse */
+#endif
+#ifndef RPM_PULSE_MIN_PERIOD_US
+#define RPM_PULSE_MIN_PERIOD_US 150 /* periode electrique minimale acceptee */
+#endif
+#ifndef RPM_PULSE_MAX_PERIOD_US
+#define RPM_PULSE_MAX_PERIOD_US 120000 /* au-dela : pas de signal (moteur lent ou arrete) */
+#endif
+
+extern int e_com_time;
+extern uint8_t running;
+
+static uint8_t pulse_active = 0;
+static uint8_t pulse_level = 0;
+static int pulse_period = 0; /* periode filtree en 1/16 us (evite le biais d'arrondi) */
+
+void MX_TIM7_Init(void)
+{
+    LL_TIM_InitTypeDef TIM_InitStruct = { 0 };
+
+    LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_TIM7);
+
+    /* priorite 1 : plus haute que la boucle 10 kHz (TIM6 = 2) */
+    NVIC_SetPriority(TIM7_LPTIM2_IRQn, 1);
+    NVIC_EnableIRQ(TIM7_LPTIM2_IRQn);
+
+    TIM_InitStruct.Prescaler = 63; /* 64 MHz / 64 = 1 MHz : 1 tick = 1 us */
+    TIM_InitStruct.CounterMode = LL_TIM_COUNTERMODE_UP;
+    TIM_InitStruct.Autoreload = 1000;
+    LL_TIM_Init(TIM7, &TIM_InitStruct);
+    LL_TIM_EnableARRPreload(TIM7);
+    LL_TIM_SetTriggerOutput(TIM7, LL_TIM_TRGO_RESET);
+    LL_TIM_DisableMasterSlaveMode(TIM7);
+    LL_TIM_EnableIT_UPDATE(TIM7);
+    LL_TIM_EnableCounter(TIM7);
+}
+
+void TIM7_LPTIM2_IRQHandler(void)
+{
+    if (!LL_TIM_IsActiveFlag_UPDATE(TIM7)) {
+        return;
+    }
+    LL_TIM_ClearFlag_UPDATE(TIM7);
+
+    /* 1) basculer tout de suite (moins de gigue) */
+    if (pulse_active) {
+        if (pulse_level) {
+            LL_GPIO_ResetOutputPin(RPM_PULSE_PORT, RPM_PULSE_PIN);
+            pulse_level = 0;
+        } else {
+            LL_GPIO_SetOutputPin(RPM_PULSE_PORT, RPM_PULSE_PIN);
+            pulse_level = 1;
+        }
+    }
+
+    /* 2) preparer la prochaine demi-periode */
+    int period = e_com_time; /* us par tour electrique */
+    if (running && period >= RPM_PULSE_MIN_PERIOD_US && period <= RPM_PULSE_MAX_PERIOD_US) {
+        if (!pulse_active) {
+            pulse_period = period << 4;
+            pulse_active = 1;
+        } else {
+            pulse_period += ((period << 4) - pulse_period) >> RPM_PULSE_FILTER_SHIFT;
+        }
+        LL_TIM_SetAutoReload(TIM7, (uint32_t)(((pulse_period + 16) >> 5) - 1)); /* demi-periode en us, arrondie */
+    } else {
+        pulse_active = 0;
+        pulse_level = 0;
+        LL_GPIO_ResetOutputPin(RPM_PULSE_PORT, RPM_PULSE_PIN);
+        LL_TIM_SetAutoReload(TIM7, 1000);
+    }
+}
+#endif /* USE_PULSE_OUT_TIMER */
+
 void MX_GPIO_Init(void)
 {
     /* GPIO Ports Clock Enable */
@@ -804,9 +887,13 @@ void enableCorePeripherals()
     NVIC_SetPriority(EXTI4_15_IRQn, 2);
     NVIC_EnableIRQ(EXTI4_15_IRQn);
     EXTI->IMR1 |= (1 << 15);
-		#ifdef USE_PULSE_OUT
+		#if defined(USE_PULSE_OUT) || defined(USE_PULSE_OUT_TIMER)
 		 LL_GPIO_SetPinMode(RPM_PULSE_PORT, RPM_PULSE_PIN, LL_GPIO_MODE_OUTPUT);
 		 LL_GPIO_SetPinOutputType(RPM_PULSE_PORT, RPM_PULSE_PIN, LL_GPIO_OUTPUT_PUSHPULL);
 		 LL_GPIO_SetPinPull(RPM_PULSE_PORT, RPM_PULSE_PIN, LL_GPIO_PULL_NO);
+		 LL_GPIO_ResetOutputPin(RPM_PULSE_PORT, RPM_PULSE_PIN);
+		#endif
+		#ifdef USE_PULSE_OUT_TIMER
+		 MX_TIM7_Init();
 		#endif
 }
