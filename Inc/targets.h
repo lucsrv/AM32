@@ -669,6 +669,16 @@
 #define BLUE_PIN    GPIO_PIN_5
 #endif
 
+#ifdef GOOSKY_S2_E230
+#define FIRMWARE_NAME "GOOSKY_S2   "
+#define FILE_NAME "GOOSKY_S2_E230"
+#define DEAD_TIME 40
+#define HARDWARE_GROUP_GD_A
+#define USE_PULSE_OUT
+#define RPM_PULSE_PORT GPIOB
+#define RPM_PULSE_PIN GPIO_PIN_6
+#endif
+
 /*********************************************************************AT32F421
  * targets*********************************************/
 
@@ -2834,9 +2844,6 @@
 #define HARDWARE_GROUP_G0_A
 #define USE_SERIAL_TELEMETRY
 #define SIXTY_FOUR_KB_MEMORY
-#define USE_PULSE_OUT_TIMER
-#define RPM_PULSE_PORT GPIOB
-#define RPM_PULSE_PIN LL_GPIO_PIN_6
 #endif
 
 #ifdef  XROTOR65_G071
