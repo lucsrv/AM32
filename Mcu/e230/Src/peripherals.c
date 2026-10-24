@@ -428,4 +428,9 @@ void enableCorePeripherals()
     EXTI_INTEN |= (uint32_t)EXTI_15;
 
     UN_TIM_Init();
+#ifdef USE_PULSE_OUT
+    rcu_periph_clock_enable(RCU_GPIOB);
+    gpio_mode_set(RPM_PULSE_PORT, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, RPM_PULSE_PIN);
+    gpio_output_options_set(RPM_PULSE_PORT, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, RPM_PULSE_PIN);
+#endif
 }
