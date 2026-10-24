@@ -905,7 +905,11 @@ void commutate()
     
 #ifdef USE_PULSE_OUT
 	if(step == 1 || step == 4  ){
+#ifdef GIGADEVICES
+    GPIO_OCTL(RPM_PULSE_PORT) ^= RPM_PULSE_PIN;
+#else
     WRITE_REG(RPM_PULSE_PORT->ODR, READ_REG(RPM_PULSE_PORT->ODR) ^ RPM_PULSE_PIN);
+#endif
 	}
 #endif
 }
